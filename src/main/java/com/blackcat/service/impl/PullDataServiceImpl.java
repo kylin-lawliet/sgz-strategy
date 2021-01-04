@@ -1,13 +1,11 @@
 package com.blackcat.service.impl;
 
-import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
-import com.blackcat.dao.ArmsMapper;
-import com.blackcat.dao.GeneralMapper;
-import com.blackcat.dao.TacticsMapper;
-import com.blackcat.entity.Arms;
-import com.blackcat.entity.General;
-import com.blackcat.entity.Tactics;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.blackcat.dao.*;
+import com.blackcat.entity.*;
 import com.blackcat.service.PullDataService;
+import com.blackcat.vo.LineupExcelInfo;
+import com.blackcat.vo.LineupGeneralTacticsExcelInfo;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -39,6 +37,10 @@ public class PullDataServiceImpl implements PullDataService {
 	private GeneralMapper generalMapper;
 	@Autowired
 	private ArmsMapper armsMapper;
+	@Autowired
+	LineupMapper lineupMapper;
+	@Autowired
+	LineupGeneralTacticsMapper lineupGeneralTacticsMapper;
 
 	private static String TacticsId = "350659307657771017";
 	private static String TacticsListUrl = "https://sgz.ejoy.com/station/ajax/"+TacticsId+"/categoryId-undefined/";
@@ -47,8 +49,12 @@ public class PullDataServiceImpl implements PullDataService {
 	private static String GeneralsListUrl = "https://sgz.ejoy.com/station/ajax/"+GeneralsId+"/categoryId-undefined/";
 	private static int GeneralsPageSize = 5;
 
+	// key:战法名称  value:战法编号
 	Map<String,Integer> tacticsMap = new HashMap();
+	// key:武将名称  value:武将编号
 	Map<String,Integer> generalMap = new HashMap();
+	// key:excel中序号值  value:生成的主键
+	Map<String,Integer> lineupIdMap = new HashMap();
 
 	@Override
 	public String pullData() throws IOException {
@@ -57,16 +63,58 @@ public class PullDataServiceImpl implements PullDataService {
 		return "ok";
 	}
 
-	private List<General> pullGenerals() throws IOException {
-//		List<General> list = new ArrayList<>();
+	@Override
+	public void saveLineupInfo(List<LineupExcelInfo> lineupList, List<LineupGeneralTacticsExcelInfo> lineupGTList) throws IOException {
+		saveLineupInfo(lineupList);
+		saveLineupGeneralTacticsInfo(lineupGTList);
+	}
+
+	private void saveLineupInfo(List<LineupExcelInfo> list) {
+		for (LineupExcelInfo info : list) {
+			Lineup lineup = new Lineup();
+			lineup.setMasterId(getGeneralId(info.getMasterName()));
+			lineup.setAssistantOneId(getGeneralId(info.getAssistantOne()));
+			lineup.setAssistantTwoId(getGeneralId(info.getAssistantTwo()));
+			lineup.setFloor(info.getFloor());
+			lineup.setGamers(info.getGamers());
+			lineup.setSupplement(info.getSupplement());
+			lineup.setUrl(info.getUrl());
+			lineupMapper.insert(lineup);
+			lineupIdMap.put(info.getId(), lineup.getId());
+		}
+	}
+
+	private void saveLineupGeneralTacticsInfo(List<LineupGeneralTacticsExcelInfo> list) {
+
+		for (LineupGeneralTacticsExcelInfo info : list) {
+			LineupGeneralTactics lineupGT = new LineupGeneralTactics();
+			lineupGT.setGeneralId(getGeneralId(info.getGeneralName()));
+			lineupGT.setLineupId(lineupIdMap.get(info.getLineupNo()));
+			lineupGT.setAddInfo(info.getAddInfo());
+			lineupGT.setTacticsInfo(info.getTacticsName());
+			lineupGT.setType(info.getType());
+			lineupGeneralTacticsMapper.insert(lineupGT);
+		}
+	}
+
+	/**
+	 * <p> 描述 : 获取武将编号
+	 * @author : blackcat
+	 * @date  : 2020/12/30 13:56
+	*/
+	private int getGeneralId(String name){
+		QueryWrapper<General> queryWrapper = new QueryWrapper<>();
+		queryWrapper.eq("name", name);
+		General general=generalMapper.selectOne(queryWrapper);
+		return general == null ? 0 : general.getId();
+	}
+
+	private void pullGenerals() throws IOException {
 		generalMapper.deleteAll();
 		armsMapper.deleteAll();
-		int j = 0;
 		for (int i = 1; i < GeneralsPageSize+1; i++) {
 			Document doc = Jsoup.connect(GeneralsListUrl+i).get();
 			Elements generals= doc.getElementsByAttributeValue("data-tbid",GeneralsId);
-			System.out.println("英雄页数："+i+" 条数："+generals.size());
-
 			for (Element info : generals) {
 				General general = getGeneral(info.attr("data-rowid"));
 				generalMapper.insert(general);
@@ -76,13 +124,8 @@ public class PullDataServiceImpl implements PullDataService {
 					Arms.setGeneralId(general.getId());
 					armsMapper.insert(Arms);
 				}
-				System.out.println("j=="+j);
-				j++;
-//				list.add(general);
 			}
 		}
-		return null;
-//		return list;
 	}
 
 	private General getGeneral(String id) throws IOException {
@@ -109,8 +152,7 @@ public class PullDataServiceImpl implements PullDataService {
 		return general;
 	}
 
-	private List<Tactics> pullTacticss() throws IOException {
-//		List<Tactics> list = new ArrayList<>();
+	private void pullTacticss() throws IOException {
 		tacticsMapper.deleteAll();
 		// 查询所有战法信息
 		for (int i = 1; i < TacticsPageSize+1; i++) {
@@ -122,11 +164,8 @@ public class PullDataServiceImpl implements PullDataService {
 				Tactics tactics = getTactics(info.attr("data-rowid"));
 				tacticsMapper.insert(tactics);
 				tacticsMap.put(tactics.getName(),tactics.getId());
-//				list.add(tactics);
 			}
 		}
-		return null;
-//		return list;
 	}
 
 	private Tactics getTactics(String id) throws IOException {
@@ -154,7 +193,6 @@ public class PullDataServiceImpl implements PullDataService {
 		tactics.setTarget(detailList.get(5).text().replace("战法目标:", ""));
 		Elements text= doc.getElementsByClass("text");
 		tactics.setTacticsDescribe(text.get(0).text());
-//		System.out.println(text.get(0).text());
 		return tactics;
 	}
 

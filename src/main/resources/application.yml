@@ -1,6 +1,6 @@
 # Server settings
 server:
-    port: 8087
+    port: 8088
 # SPRING PROFILES
 spring:
     datasource:
@@ -35,6 +35,6 @@ spring:
                 content:
                     enabled: true
                     paths: /**
-logging:
-    level:
-        com.blackcat.dao: debug
+#logging:
+#    level:
+#        com.blackcat.dao: debug
